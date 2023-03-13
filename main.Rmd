@@ -1,0 +1,206 @@
+---
+title: "Labour Market Outcomes of college graduates in 2018"
+author: ""
+date: ""
+output: html_document
+fontsize: 11pt
+urlcolor: blue
+---
+## Group members:
+1. Jian Hao Chiah
+2. Yunus Emre Bozkurt
+3. Ogulcan Arslantekin
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Set global R options
+options(scipen = 999)
+
+# Set the graphical theme
+ggplot2::theme_set(ggplot2::theme_light())
+
+# Helper packages
+library(tidyverse)
+library(broom)
+library(AER)
+library(haven)
+library(ipumsr)
+library(forcats)
+library(scales)
+library(matrixStats)
+library(kableExtra)
+library(forecast)
+```
+
+
+## Introduction
+
+We explore the labour market outcomes of recent college graduates in the US using the American Community Survey (ACS) data for 2018.  
+
+
+## Data management
+
+Our focus is on recent graduates, a subset of the entire data set.  For the next part of the analysis, we will focus on those with a college degree, between the age of 25-35.  
+
+```{r, warning=FALSE, echo = T}
+# load data
+#Data imported by "read_rds" using the provided data's current path directory on my pc.
+raw <- read_rds("D:/Desktop/R_Repo/LabourMarketOutcomes-USA-CollegeGraduates/recent_grads.rds")
+
+# keeping only observations between the age of 25-35
+df <- raw %>% 
+  filter(between(age, 25,35), BA_or_more == 1)
+
+```
+
+## Employment outcomes
+
+```{r, echo = T, fig.height = 7}
+df <- raw
+
+#In empstat part of the data. People are categorized as "Employed" or "Unemployed". We can not calculate the weighted mean of the employment status with if they are categorical so we added a new column to the data frame named "empstat2"we link the epstat column with "$".In this column the "Employed" people become "1" and "Unemployed" people become "0"
+df$empstat2 <- ifelse(df$empstat == "Employed",1,0)
+#We created a new data frame named "a" and assigned df to it as we are gonna process & analyze the data from df we created in the first code chunk.
+a <- df %>%
+  #By group_by function we created a grouped table where we can analyze the data by groups. The data will be grouped by degree fields.
+  group_by(deg.field) %>%
+  #By dplyr::filter(deg.field !="N/A") line we did not include the NA variable in our groups.
+  dplyr::filter(deg.field !="N/A")%>% 
+  #By summarise function we created a new column to our data frame with the weighted mean of the employment status by groups (degree fields).
+  summarise(mean = weighted.mean(empstat2, perwt))
+#By a <- a[order(a$mean,decreasing = F), ] line we order the weighted means we calculated from lowest to highest(decreasing = F).
+a <- a[order(a$mean,decreasing = F), ]
+a$deg.field <- factor(a$deg.field, levels = a$deg.field)
+p1 <- a %>% 
+  #we create a point graph using the degree fields and the weighted mean employment rates. In the first line we assigned deg.field(degree fields) to x, and mean(weighted mean) to y but with coord_flip function   horizontal dimension becomes vertical, and vertical dimension becomes horizontal. 
+    ggplot(aes(deg.field, mean)) + geom_point(shape=21,fill="gray65",
+        color="black", size=3.5) +
+        theme_minimal() +  
+        coord_flip() +
+    labs(title = "Employment rates of recent graduates by field of study",
+        x = "Field of Study", y = "") +
+        theme_bw() +
+   theme(panel.background = element_rect(fill="gray99"),
+        plot.background = element_rect(fill="lavender"),
+        plot.title = element_text(face="bold", 
+        margin = margin(5, 0, 5, 0)),
+        legend.title = element_text(colour="lightsteelblue4", face="bold"),
+        axis.title.y = element_text(face="bold", vjust=2),
+        axis.text.x = element_text(size=10, vjust=0.5)
+        )
+p1
+
+#The figure above shows the employment rates of recent college graduates, between the age of 25-35, by field of study. As the statistical measure of earning outcomes median is used in order to eliminate the    outliers' effect on the result. Highest rate of employment among recent college graduates between the age of 25-35 is belong to the ones who graduated from Electrical, Mechanic Repairs and lowest employment    rate with the same constraints belongs to the ones who graduated from Family, Consumer Sciences.
+
+```
+
+
+## Earnings outcomes
+
+```{r, echo = T, eval = F}
+grad_agg <- grads %>%
+  group_by(deg.field, female) %>%
+  summarise(median = weightedMedian(incwage, perwt)) %>%
+  mutate(female = factor(female, labels = c("Men","Women")),
+         order  = mean(median[female == "Women"], na.rm = T)) %>%
+  ungroup() %>% 
+  mutate(deg.field = fct_reorder(deg.field, order)) 
+```
+
+
+```{r, echo = T, fig.height = 7}
+# The sex column in data is categorized as "1" and "2" in our raw data. "1" means male and "2" means female. We created a new column with the date from "sex" column from the data and we changed 1s as Men and 2s as Women by df$female <- ifelse(df$sex == 2, "Women","Men") line.
+df$female <- ifelse(df$sex == 2, "Women","Men")
+grad_agg <- df %>%
+  #By dplyr::filter(deg.field !="N/A") line we did not include the NA variable in our groups.
+  dplyr::filter(deg.field !="N/A")%>% 
+  #By group_by function we created a grouped table where we can analyze the data by groups. The data will be grouped by degree fields and the gender of the people(female).
+  group_by(deg.field, female) %>%
+  #By summarise function we created a new column to our new data frame with the weighted median of the incomes of the people by groups (degree fields).
+  summarise(median = weightedMedian(incwage, perwt)) %>%
+  #By mutate(female = factor(female, levels = c("Men","Women")),
+         #order  = mean(median[female == "Women"], na.rm = T)) lines we encode the female vector as a factor and order the values.
+  mutate(female = factor(female, levels = c("Men","Women")),
+         order  = mean(median[female == "Women"], na.rm = T)) %>%
+  ungroup() %>% 
+  #By mutate(deg.field = fct_reorder(deg.field, order)) line we ordered the degree fields based on the female weighted median values as we assigned to order.
+  mutate(deg.field = fct_reorder(deg.field, order)) 
+grad_agg <- arrange(grad_agg, order)
+grad_agg$deg.field <- factor(grad_agg$deg.field, 
+                             levels = unique(grad_agg$deg.field))
+p2 <- ggplot(grad_agg,aes(x = deg.field, y = median)) +
+  
+  #By labs function we name the x.y dimensions and the plot itself and we used two different colors to show the genders by defining the color in labs function.
+  #By scale_y_continuous( labels  = scales::dollar) +
+  #geom_segment( aes(x = deg.field, xend =  deg.field, 
+                            #y =order, yend =median),
+               #colour = "lightblue", 
+               #size = 1) +
+  #geom_point(aes(color = female), size = 2) + 
+   #coord_flip() +
+  #scale_color_manual(values = c("darkblue","lightblue")) we define the details of the plot by defining the x, y dimensions, the size of the dots and the colors to show the genders. 
+  labs(title = "Field of Study and Earnings by Gender",
+       x = "Median Annual Income from Wages and Salary", y = "", color = "Earnings") +
+  theme_bw() +
+  scale_y_continuous(labels = scales::dollar) +
+  geom_segment(aes(x = deg.field, xend = deg.field, 
+                            y = order, yend = median),
+               colour = "slategray2", 
+               size = 1) +
+  geom_point(aes(color = female), size = 3) + 
+  coord_flip() +
+  scale_color_manual(values = c("steelblue4","slategray2")) +
+  theme(panel.background = element_rect(fill="gray96"),
+        plot.background = element_rect(fill="lightcyan"),
+        plot.title = element_text(colour="darkslateblue",size=15, face="bold", 
+        margin = margin(5, 0, 5, 0)),
+        legend.title = element_text(colour="gold4", face="bold"),
+        axis.title.y = element_text(size=14, face="bold", color="darkorchid3",    vjust=2),
+        axis.text.x = element_text(size=10, vjust=0.5)
+        )
+
+p2
+
+#The Dumbell Figure above shows the gender gap of recent college graduates, between the age of 25-35, in median earnings by field of study. The field of studies ordered by highest female earnings to lowest female earning field. As it can be seen in the figure men are earning more almost in all fields than women by a substantial difference. Only women, between the age of 25-35, who are graduated from law department earns more than men. Recent college graduate women between the age of 25-35 earns the highest in Military Technology field and, recent college graduate men between the age of 25-35 earns the highest in engineering field.
+           
+```
+
+## Using Tables to Present Results
+
+```{r, echo = T}
+cps <- df %>% 
+  #By filter(!is.na(incwage)) and filter(deg.field!="N/A") functions we omit the NA observations in income and degree field part of the data.
+  filter(!is.na(incwage)) %>% 
+  filter(deg.field !="N/A") %>% 
+  #By group_by function we created a grouped table where we can analyze the data by groups. The data will be grouped by degree fields and the gender of the people(female).
+  group_by(deg.field, female) %>% 
+  #By mean = weighted.mean(incwage, perwt, na.rm = TRUE), we calculated the weighted mean incomes (NAs are excluded)
+  summarise(mean = weighted.mean(incwage, perwt),
+            #By pct_75 = quantile(incwage, prob = .75) line we found the third quantile
+            pct_75 = quantile(incwage, prob = .75),
+            #By pct_25 = quantile(incwage, prob = .25) line we found the first quantile
+            pct_25 = quantile(incwage, prob = .25),
+            #By median = weightedMedian(incwage, perwt, na.rm = TRUE), we calculated the weighted median incomes (NAs are excluded) 
+            median = weightedMedian(incwage, perwt),
+            #By N = n() line we are the number of observations to the table.
+            N = n()) %>% 
+  ungroup() %>% 
+  #By pivot_wider function we widened the data set by increasing the number of columns and decreasing the number of rows.
+  pivot_wider(names_from = female, values_from = c(mean, pct_75, pct_25, median, N) ) %>% 
+  select(deg.field, ends_with("Women"), everything())
+
+## kable function for table
+cps %>% 
+  #By kbl & col.names functions we named the columns of the table we created.
+  kbl(digits = 3,
+      col.names = c("Field of Study", "Mean", "75th Pct.", "25th Pct.", "Median", "N", 
+                    "Mean", "75th Pct.", "25th Pct.","Median", "N")) %>%  
+  kable_styling(bootstrap_options = "striped", fixed_thead = T) %>% 
+  #By add_header_above function we added the title for the columns between 2-6 and 7-11. 2-6 columns' header is Women since we are calculating the values for female. 7-10 columns' header is Men since we are calculating the values for male.
+  add_header_above(c(" " = 1, "Women" = 5, "Men" = 5))
+
+#The table shows earnings of recent college graduate women and men, between the age of 25-35, by their fields of studies. The median and mean values of earnings' of men and women are displayed in the table with number of observations. Also, the 25th and 75th percentiles shown in the figure to help to understand the variation in earning of men and women in their field of studies. 
+#All survey data comes with weights due to sampling schemes. Weights are important for getting statistics for the population so we used weighted mean and weighted median.
+
+```
